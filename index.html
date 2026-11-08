@@ -69,10 +69,16 @@
     });
   };
 
-  /* Commands from the launcher: play, pause, next, previous, volume (0 to 100) and status. */
+  /* Commands from the launcher: play, pause, next, previous, volume (0 to 100), and focus, which hands
+     the TV remote's keys to YouTube's own player so you can press its buttons, like Skip on an ad. */
   window.addEventListener('message', function (event) {
     var data = event.data || {};
     if (!player || data.target !== 'tv-player' || typeof player.playVideo !== 'function') { return; }
+    if (data.command === 'focus') {
+      try { player.getIframe().focus(); } catch (e) { /* stays with this page */ }
+      tell({ type: 'focus', ok: document.activeElement === player.getIframe() });
+      return;
+    }
     if (data.command === 'play') { player.playVideo(); }
     else if (data.command === 'pause') { player.pauseVideo(); }
     else if (data.command === 'next') { player.nextVideo(); }
