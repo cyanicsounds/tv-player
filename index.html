@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>TV Player</title>
+<style>
+  html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #000; }
+  #player { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<div id="player"></div>
+<script>
+/* A YouTube player for the "My Home" TV launcher.
+   The launcher shows this page in a small card and controls it with messages, because YouTube only plays
+   on pages that come from a real website. Open it with ?list=PLAYLIST_ID or ?v=VIDEO_ID, and add
+   &shuffle=1 to shuffle a playlist. It keeps nothing and sends nothing anywhere except to the launcher. */
+(function () {
+  'use strict';
+  var params = new URLSearchParams(location.search);
+  var list = params.get('list');
+  var video = params.get('v');
+  var shuffle = params.get('shuffle') === '1';
+  var shuffled = false;
+  var player = null;
+
+  function tell(message) {
+    message.source = 'tv-player';
+    try { window.parent.postMessage(message, '*'); } catch (e) { /* no launcher around it */ }
+  }
+
+  function title() {
+    try { return (player.getVideoData() || {}).title || ''; } catch (e) { return ''; }
+  }
+
+  window.onYouTubeIframeAPIReady = function () {
+    var vars = { autoplay: 1, playsinline: 1, controls: 0, rel: 0, origin: location.origin };
+    if (list) { vars.listType = 'playlist'; vars.list = list; }
+    player = new YT.Player('player', {
+      width: '100%',
+      height: '100%',
+      videoId: video || undefined,
+      playerVars: vars,
+      events: {
+        onReady: function () {
+          tell({ type: 'ready' });
+          player.playVideo();
+        },
+        onStateChange: function (event) {
+          /* Shuffling only works once the playlist has loaded, so it happens on the first play. */
+          if (shuffle && !shuffled && list && event.data === 1) {
+            shuffled = true;
+            player.setShuffle(true);
+            player.playVideoAt(0);
+          }
+          tell({ type: 'state', state: event.data, title: title() });
+        },
+        onError: function (event) {
+          tell({ type: 'error', code: event.data });
+          /* Some songs can't be played outside YouTube itself (codes 101 and 150), or are missing (100).
+             In a playlist, move on to the next one rather than stopping. */
+          if (list && (event.data === 100 || event.data === 101 || event.data === 150)) {
+            setTimeout(function () { player.nextVideo(); }, 1000);
+          }
+        }
+      }
+    });
+  };
+
+  /* Commands from the launcher: play, pause, next, previous, volume (0 to 100) and status. */
+  window.addEventListener('message', function (event) {
+    var data = event.data || {};
+    if (!player || data.target !== 'tv-player' || typeof player.playVideo !== 'function') { return; }
+    if (data.command === 'play') { player.playVideo(); }
+    else if (data.command === 'pause') { player.pauseVideo(); }
+    else if (data.command === 'next') { player.nextVideo(); }
+    else if (data.command === 'previous') { player.previousVideo(); }
+    else if (data.command === 'volume') { player.setVolume(Math.max(0, Math.min(100, Number(data.value) || 0))); }
+    if (data.command) { tell({ type: 'state', state: player.getPlayerState(), title: title() }); }
+  });
+
+  var tag = document.createElement('script');
+  tag.src = 'https://www.youtube.com/iframe_api';
+  tag.onerror = function () { tell({ type: 'error', code: 'api' }); };
+  document.head.appendChild(tag);
+})();
+</script>
+</body>
+</html>
